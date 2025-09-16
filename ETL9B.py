@@ -54,3 +54,15 @@ def load():
     
 
     return np.array(images), labels
+
+'''
+images, labels = load()
+past = set()
+for img, lbl in zip(images, labels):
+    
+    past.add(lbl)
+    if len(past) == 76:
+        plt.imshow(img, cmap='gray')
+        plt.savefig('magiccharacter.png')
+        print('Saved character 75')
+'''
