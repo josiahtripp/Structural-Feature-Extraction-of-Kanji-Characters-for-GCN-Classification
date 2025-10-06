@@ -145,6 +145,7 @@ while len(dims) > 0:
     import matplotlib.pyplot as plt
     
     cmap = plt.cm.get_cmap('hsv', centroids.shape[0])
+    cmap = plt.cm.get_cmap('hsv', 20)
 
     # Extract x and y coordinates from centroids
     x_coords = centroids[:, 0]

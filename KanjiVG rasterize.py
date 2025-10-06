@@ -1,7 +1,7 @@
 from lxml import etree
-from io import BytesIO
 import cairosvg
-from PIL import Image
+import io
+from PIL import Image, ImageOps, ImageFilter
 
 Groupings = {
     "㇀": 0, "㇁": 3, "㇂": 5, "㇃": 5, "㇄": 2, "㇅": 7, "㇆": 7,
@@ -10,23 +10,58 @@ Groupings = {
     "㇚": 2, "㇛": 9, "㇜": 9, "㇞": 9, "㇟": 9, "㇡": 9,
 }
 
-def rasterize_groupings(filename: str, size=(64, 64)):
+def rasterize_groupings(filename: str):
+
+    px_threshold = 15
+    g_blur_factor = 0.5
+
     tree = etree.parse(filename)
     root = tree.getroot()
     ns = {"svg": "http://www.w3.org/2000/svg"}
 
+    # Collect images for each grouping index
+    stroke_images = []
+
+    # Convert stroke color to white
+    for elem in root.xpath(".//svg:g | .//svg:path", namespaces=ns):
+        style = elem.attrib.get("style", "")
+        if "stroke:" in style:
+            style = style.replace("stroke:#000000", "stroke:#FFFFFF")
+            style = style.replace("stroke:black", "stroke:#FFFFFF")
+            elem.attrib["style"] = style
+        if "stroke-width:" in style:
+            style = style.replace("stroke-width:3", "stroke-width:2")
+            elem.attrib["style"] = style
+
+    # Remove stroke numbers from SVG
+    targets = root.xpath(".//svg:g[starts-with(@id, 'kvg:StrokeNumbers_')]", namespaces=ns)
+    for target in targets:
+        parent = target.getparent()
+        if parent is not None:
+            parent.remove(target)
+
+    # Save whole character image
+    whole_kanji_svg = etree.tostring(root, encoding="utf-8", xml_declaration=False)
+    whole_kanji_image = cairosvg.svg2png(bytestring=whole_kanji_svg, output_width=256, output_height=256, background_color="#000000")
+
+    tmp_img = Image.open(io.BytesIO(whole_kanji_image)).convert("L")
+    tmp_img = tmp_img.filter(ImageFilter.GaussianBlur(g_blur_factor))
+    tmp_img = tmp_img.resize((64, 64), Image.LANCZOS)
+    bw_kanji_image = tmp_img.point(lambda p: 255 if p > px_threshold else 0, mode="1")
+
+    stroke_images.append(bw_kanji_image)
+
     # Get all stroke <path> elements
     strokes = root.xpath(".//svg:path", namespaces=ns)
 
-    # Collect images for each grouping index
-    results = {}
-
+    # For all stroke groups
     for group_idx in set(Groupings.values()):
+
         # Clone the tree
         temp_tree = etree.ElementTree(etree.fromstring(etree.tostring(root)))
         temp_root = temp_tree.getroot()
 
-        # Remove strokes not belonging to this group
+        # Remove tags without stroke type attribute
         for path in temp_root.xpath(".//svg:path", namespaces=ns):
             kvg_type = path.attrib.get("{http://kanjivg.tagaini.net}type")
             if kvg_type is None:
@@ -35,7 +70,8 @@ def rasterize_groupings(filename: str, size=(64, 64)):
                     parent.remove(path)
                 continue
 
-            group = Groupings.get(kvg_type, None)
+            # Remove stroke
+            group = Groupings.get(kvg_type[len(kvg_type) - 1:], None)
             if group != group_idx:
                 parent = path.getparent()
                 if parent is not None:
@@ -48,33 +84,20 @@ def rasterize_groupings(filename: str, size=(64, 64)):
                 if parent is not None:
                     parent.remove(g)
 
-        # Convert strokes to white
-        for elem in temp_root.xpath(".//svg:path | .//svg:g", namespaces=ns):
-            style = elem.attrib.get("style", "")
-            if "stroke:" in style:
-                style = style.replace("stroke:#000000", "stroke:#FFFFFF")
-                style = style.replace("stroke:black", "stroke:#FFFFFF")
-                elem.attrib["style"] = style
+        # Rasterize image
+        stroke_svg = etree.tostring(temp_root, encoding="utf-8", xml_declaration=False)
+        stroke_image = cairosvg.svg2png(bytestring=stroke_svg, output_width=256, output_height=256, background_color="#000000")
+         
+        tmp_img = Image.open(io.BytesIO(stroke_image)).convert("L")
+        tmp_img = tmp_img.filter(ImageFilter.GaussianBlur(g_blur_factor))
+        tmp_img = tmp_img.resize((64, 64), Image.LANCZOS)
 
-        # Serialize modified SVG
-        svg_data = etree.tostring(temp_root)
+        bw_stroke_image = tmp_img.point(lambda p: 255 if p > px_threshold else 0, mode="1")
 
-        # Rasterize with cairosvg (RGBA, transparent background)
-        png_bytes = cairosvg.svg2png(bytestring=svg_data, output_width=size[0], output_height=size[1])
+        stroke_images.append(bw_stroke_image)
 
-        # Load into Pillow
-        img = Image.open(BytesIO(png_bytes)).convert("RGBA")
+    return stroke_images
 
-        # Apply black background
-        background = Image.new("RGBA", img.size, (0, 0, 0, 255))
-        final_img = Image.alpha_composite(background, img).convert("RGB")
-
-        results[group_idx] = final_img
-
-    return results
-
-
-# Example usage
 images = rasterize_groupings("kanjivg\\kanji\\0f9b2.svg")
-for idx, img in images.items():
-    img.save(f"group_{idx}.png")  # Just for demo, you can keep them in memory
+for idx, image in enumerate(images):
+    image.save(f"out_svgs\\img-{idx}.png")
