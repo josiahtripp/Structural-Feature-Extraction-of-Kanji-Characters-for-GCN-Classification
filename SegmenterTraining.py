@@ -568,7 +568,7 @@ def MakeTensors(regenerate=False, regenerate_valid_characters=False, regenerate_
             character_tensors = torch.load(os.path.join(Output_dir, character_tensors_filename))
 
             if os.path.exists(os.path.join(Output_dir, stroke_group_tensors_filename)): # Stroke group tensors exist
-                stroke_group_tensors = torch.save(stroke_group_tensors_filename, os.path.join(Output_dir, stroke_group_tensors_filename))
+                stroke_group_tensors = torch.load(os.path.join(Output_dir, stroke_group_tensors_filename))
                 
                 return character_tensors, stroke_group_tensors # Return tensors
         # DNE
@@ -590,7 +590,7 @@ def MakeTensors(regenerate=False, regenerate_valid_characters=False, regenerate_
         character_image = img.GetBaseImage() # Get the base image (whole character image)
         if character_image is None: # Error in character
             return None
-        character_tensors.append(to_tensor(character_image).squeeze(0)) # Add to list
+        character_tensors.append(to_tensor(character_image)) # Add to list
 
         component_tensors = [None] * num_stroke_groups # Creates list for all stroke groups
         components = img.GetComponents() # Get all components
@@ -613,8 +613,8 @@ def MakeTensors(regenerate=False, regenerate_valid_characters=False, regenerate_
         stroke_group_tensors.append(torch.stack(component_tensors)) # Stack to full tensor and add to list
     
     # Stack to convert to proper tensor format
-    character_tensors = torch.stack(character_tensors)
-    stroke_group_tensors = torch.stack(stroke_group_tensors)
+    character_tensors = torch.stack(character_tensors).float()
+    stroke_group_tensors = torch.stack(stroke_group_tensors).float()
 
     # Normalize white pixels (255) to 1
     character_tensors[character_tensors > 0] = 1
