@@ -3,22 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data import Dataset
 
-class SegmenterTrainingDataset(Dataset):
-    def __init__(self, X, Y):
-        self.X = X * 2 - 1
-        self.Y = Y * 2 - 1
-
-    def __len__(self):
-        return len(self.X)
-    
-    def __getitem__(self, idx):
-        return {"A": self.X[idx], "B": self.Y[idx]}
-
-characters, stroke_groups = st.MakeTensors(regenerate=True, 
-                                           regenerate_valid_characters=False, 
-                                           regenerate_kanji_characters=False)
-
-dataset = SegmenterTrainingDataset(characters, stroke_groups)
 
 '''
 for outer_i in range(11337):
