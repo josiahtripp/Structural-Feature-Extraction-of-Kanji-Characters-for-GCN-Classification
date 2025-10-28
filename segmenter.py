@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import Dataset
 import models
 
-st.MakeTensors(regenerate=True, regenerate_kanji_characters=True, regenerate_valid_characters=True)
+st.MakeTensors(regenerate=True, regenerate_valid_characters=True)
 '''
 for outer_i in range(11337):
 

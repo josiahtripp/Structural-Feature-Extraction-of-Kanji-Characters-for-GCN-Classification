@@ -7,6 +7,7 @@ import time
 import datetime
 import sys
 import SegmenterTraining as st
+from scipy.ndimage import label
 
 import torchvision.transforms as transforms
 from torchvision.utils import save_image
@@ -60,8 +61,8 @@ cuda = True if torch.cuda.is_available() else False
 criterion_GAN = torch.nn.MSELoss()
 
 # Loss weight of L1 pixel-wise loss between translated image and real image
-lambda_pixel = 150
-lambda_cluster = 5
+lambda_pixel = 175
+lambda_cluster = 3
 
 # Calculate output of image discriminator (PatchGAN)
 patch = (1, opt.img_height // 2 ** 4, opt.img_width // 2 ** 4)
@@ -133,6 +134,9 @@ val_dataloader = DataLoader(
     shuffle=True
 )
 
+# Minimum size of allowed pixel clusters in output (computed in loss and removed in sample)
+min_cluster_size = 7
+
 # Tensor type
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
@@ -150,6 +154,40 @@ def sample_images(batches_done):
     real_B = torch.cat(torch.unbind(real_B, dim=1), dim=1).unsqueeze(1)
 
     img_sample = torch.cat((real_A.data, fake_B.data, real_B.data), -2)
+
+    B, C, H, W = img_sample.shape
+    assert C == 1, "Function assumes single-channel images"
+    
+    cleaned = []
+    
+    for i in range(B):
+        img = img_sample[i, 0]  # shape [H, W]
+        arr = img.cpu().numpy().astype(np.uint8)
+        
+        # Label connected components (8-connectivity)
+        labeled, num_features = label(arr, structure=np.ones((3,3)))
+        
+        if num_features == 0:
+            cleaned.append(img)
+            continue
+        
+        # Count pixels per component
+        counts = np.bincount(labeled.ravel())
+        
+        # Create mask of small clusters
+        remove_mask = np.zeros_like(arr, dtype=bool)
+        for j, c in enumerate(counts):
+            if j == 0:
+                continue  # skip background
+            if c < min_cluster_size:
+                remove_mask[labeled == j] = True
+        
+        arr[remove_mask] = 0
+        cleaned.append(torch.from_numpy(arr).to(img_sample.device, dtype=img_sample.dtype))
+    
+    # Stack back into [B, 1, H, W]
+    img_sample = torch.stack(cleaned, dim=0).unsqueeze(1)
+
     save_image(img_sample, "images/%s/%s.png" % (opt.dataset_name, batches_done), nrow=16, normalize=True)
 1
 
@@ -187,7 +225,7 @@ for epoch in range(opt.epoch, opt.n_epochs):
         loss_pixel = (weights * torch.abs(fake_B - real_B)).mean()
 
         # Small cluster loss
-        loss_cluster = small_cluster_loss(fake_B.detach(), 7)
+        loss_cluster = small_cluster_loss(fake_B.detach(), min_cluster_size)
 
         # Total loss
         loss_G = loss_GAN + lambda_pixel * loss_pixel + loss_cluster * lambda_cluster

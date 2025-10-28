@@ -17,10 +17,10 @@ Temporary_dir = "C:\\Users\\josia\\Kanji-Recognition\\kanjivg-tmp"
 
 # Groupings use for segmenting individual strokes into groups for the GAN stroke group tensor-field
 groupings = {
-    "㇀": 0, "丶":0, "㇁": 3, "㇂": 5, "㇃": 5, "㇄": 2, "㇅": 7, "㇆": 7,
-    "㇇": 8, "㇈": 6, "㇉": 9, "㇋": 9, "㇏": 4, "㇐": 1, "㇑": 2,
+    "㇀": 3, "丶":0, "㇁": 3, "㇂": 5, "㇃": 5, "㇄": 2, "㇅": 4, "㇆": 7,
+    "㇇": 8, "㇈": 4, "㇉": 9, "㇋": 9, "㇏": 5, "㇐": 1, "㇑": 2,
     "㇒": 3, "㇓": 3, "㇔": 0, "㇕": 7, "㇖": 1, "㇗": 2, "㇙": 2,
-    "㇚": 2, "㇛": 9, "㇜": 9, "㇞": 9, "㇟": 9, "㇡": 9,
+    "㇚": 2, "㇛": 6, "㇜": 6, "㇞": 4, "㇟": 2, "㇡": 9,
 }
 
 # The number of stroke groups
@@ -353,6 +353,8 @@ def GetKanjiCharacters(regenerate=False) -> list[HarchImage]:
         for f in files:
             file.write(f"\t{f}\n")
 
+    return kanji_characters
+
 def GetValidCharacters(regenerate=False, regenerate_kanji_characters=False) -> list[HarchImage]:
 
     """
@@ -543,6 +545,8 @@ def GetValidCharacters(regenerate=False, regenerate_kanji_characters=False) -> l
                 file.write("(None)")
             else:
                 file.write(basename)
+
+    return valid_characters
 
 def MakeTensors(regenerate=False, regenerate_valid_characters=False, regenerate_kanji_characters=False) -> tuple[torch.Tensor, torch.Tensor]:
     
