@@ -1,6 +1,8 @@
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
+from scipy.ndimage import label
+import numpy as np
 
 
 def weights_init_normal(m):
@@ -120,3 +122,38 @@ class Discriminator(nn.Module):
         # Concatenate image and condition image by channels to produce input
         img_input = torch.cat((img_A, img_B), 1)
         return self.model(img_input)
+
+def small_cluster_loss(x, threshold=10):
+    """
+    x: torch tensor of shape [batch, channels, H, W] with 0/255 values
+    threshold: pixel count threshold
+    """
+    batch_size, channels, h, w = x.shape
+    losses = []
+
+    for i in range(batch_size):
+        for j in range(channels):
+            img = x[i, j].cpu().numpy().astype(np.uint8)
+            mask = (img > 0).astype(np.uint8)
+
+            # 8-connectivity labeling
+            labeled, num_features = label(mask, structure=np.ones((3,3)))
+
+            if num_features == 0:
+                continue
+
+            # Count pixels per component (vectorized)
+            pixels_per_component = np.bincount(labeled.ravel())[1:]  # skip background
+
+            # Only consider components smaller than threshold
+            delta = np.clip(threshold - pixels_per_component, 0, None)
+
+            # Average over components
+            losses.append(delta.mean())
+
+    if len(losses) == 0:
+        return torch.tensor(0., device=x.device)
+
+    # Average over all images
+    final_loss = np.mean(losses) / threshold
+    return torch.tensor(final_loss, device=x.device, dtype=torch.float32)

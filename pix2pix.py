@@ -41,9 +41,12 @@ parser.add_argument(
 parser.add_argument("--checkpoint_interval", type=int, default=-1, help="interval between model checkpoints")
 parser.set_defaults(
     batch_size=16,
+    dataset_name="KanjiVG",
+    checkpoint_interval=5,
     channels=1,
     img_height=64,
-    img_width=64
+    img_width=64,
+    lr=0.0001
 )
 opt = parser.parse_args()
 print(opt)
@@ -55,12 +58,10 @@ cuda = True if torch.cuda.is_available() else False
 
 # Loss functions
 criterion_GAN = torch.nn.MSELoss()
-criterion_pixelwise = torch.nn.L1Loss()
-criterion_stack = torch.nn.L1Loss()
 
 # Loss weight of L1 pixel-wise loss between translated image and real image
-lambda_pixel = 100
-lambda_stack = 25
+lambda_pixel = 150
+lambda_cluster = 5
 
 # Calculate output of image discriminator (PatchGAN)
 patch = (1, opt.img_height // 2 ** 4, opt.img_width // 2 ** 4)
@@ -73,7 +74,6 @@ if cuda:
     generator = generator.cuda()
     discriminator = discriminator.cuda()
     criterion_GAN.cuda()
-    criterion_pixelwise.cuda()
 
 if opt.epoch != 0:
     # Load pretrained models
@@ -115,14 +115,20 @@ characters, stroke_groups = st.MakeTensors(regenerate=False,
 
 full_dataset = SegmenterTrainingDataset(characters, stroke_groups)
 
+val_ratio = 0.1
+val_size = int(len(full_dataset) * val_ratio)
+train_size = len(full_dataset) - val_size
+
+train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
+
 dataloader = DataLoader(
-    dataset=full_dataset,
+    dataset=train_dataset,
     batch_size=opt.batch_size,
     shuffle=True
 )
 
 val_dataloader = DataLoader(
-    dataset=full_dataset,
+    dataset=val_dataset,
     batch_size=opt.batch_size,
     shuffle=True
 )
@@ -138,11 +144,14 @@ def sample_images(batches_done):
     real_B = Variable(imgs["B"].type(Tensor))
     fake_B = generator(real_A)
 
+    fake_B = (fake_B > 0.5).float()
+
     fake_B = torch.cat(torch.unbind(fake_B, dim=1), dim=1).unsqueeze(1)
     real_B = torch.cat(torch.unbind(real_B, dim=1), dim=1).unsqueeze(1)
 
     img_sample = torch.cat((real_A.data, fake_B.data, real_B.data), -2)
     save_image(img_sample, "images/%s/%s.png" % (opt.dataset_name, batches_done), nrow=16, normalize=True)
+1
 
 
 # ----------
@@ -174,15 +183,14 @@ for epoch in range(opt.epoch, opt.n_epochs):
         loss_GAN = criterion_GAN(pred_fake, valid)
 
         # Pixel-wise loss
-        loss_pixel = criterion_pixelwise(fake_B, real_B)
+        weights = torch.where(real_B > 0, torch.ones_like(real_B), 0.1*torch.ones_like(real_B))
+        loss_pixel = (weights * torch.abs(fake_B - real_B)).mean()
 
-        # Stack-wise loss
-        fake_B_binary = (fake_B > 0.5).float()
-        stack_fake = torch.clamp(fake_B_binary.sum(dim=1, keepdim=True), 0, 1)
-        loss_stack = criterion_stack(stack_fake, real_A)
+        # Small cluster loss
+        loss_cluster = small_cluster_loss(fake_B.detach(), 7)
 
         # Total loss
-        loss_G = loss_GAN + lambda_pixel * loss_pixel + lambda_stack * loss_stack
+        loss_G = loss_GAN + lambda_pixel * loss_pixel + loss_cluster * lambda_cluster
 
         loss_G.backward()
 
